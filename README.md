@@ -6,6 +6,8 @@ This capstone is a reproducible, offline demonstration of a customer intelligenc
 
 The four connected parts consume each other's outputs: Part A produces the trusted tables and database; Part B creates the segment file consumed by Part C; Part D uses the Part A database and its own retrieval code.
 
+The public submission is on the [`main` branch](https://github.com/dineshchelladurai/instamart-customer-intelligence-support-copilot/tree/main).
+
 ## Reproduce
 
 Run these commands from the repository root with Python 3.11 or newer. The dependency list is frozen from the project virtual environment.
