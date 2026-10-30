@@ -1,20 +1,15 @@
-﻿import csv
-import json
-import math
-import os
-import random
-import re
-from collections import Counter
+"""generate_data.py -- deterministic synthetic data for the Instamart Customer Intelligence capstone.
+Run:  python generate_data.py        (writes ./data/raw/*.csv and ./data/policies/*.txt)
+Uses only the Python standard library. All data is synthetic and fictional."""
+import csv, math, os, random
 from datetime import datetime, timedelta
 
 rng = random.Random(42)
-RAW = os.path.join("data", "raw")
-POL = os.path.join("data", "policies")
-os.makedirs(RAW, exist_ok=True)
-os.makedirs(POL, exist_ok=True)
+RAW, POL = os.path.join("data", "raw"), os.path.join("data", "policies")
+os.makedirs(RAW, exist_ok=True); os.makedirs(POL, exist_ok=True)
 
 CITIES = ["Chennai", "Mumbai", "Bengaluru", "Delhi", "Hyderabad", "Pune"]
-PRODUCTS = [
+PRODUCTS = [  # (name, category, price_inr)
     ("Basmati Rice 1kg", "Grocery", 129), ("Toor Dal 1kg", "Grocery", 165), ("Atta 5kg", "Grocery", 245),
     ("Sunflower Oil 1L", "Grocery", 155), ("Sugar 1kg", "Grocery", 48), ("Salt 1kg", "Grocery", 24),
     ("Tea Powder 250g", "Grocery", 120), ("Poha 500g", "Grocery", 42),
@@ -31,197 +26,173 @@ PRODUCTS = [
     ("Wireless Earbuds", "Electronics", 1499), ("Power Bank 10000mAh", "Electronics", 1299),
     ("USB-C Cable 1m", "Electronics", 299), ("Phone Charger 20W", "Electronics", 799),
     ("Smart Bulb", "Electronics", 599), ("Bluetooth Speaker", "Electronics", 1999),
-    ("Phone Stand", "Electronics", 349), ("Memory Card 64GB", "Electronics", 549),
-]
-CITY_VARIANTS = [c for city in CITIES for c in [city, city.lower(), city.upper(), " " + city + " "]]
-NONBLANK_GENDERS = ["male", "Male", "M", "m", "MALE", "female", "Female", "F", "f", "FEMALE"]
+    ("Phone Stand", "Electronics", 349), ("Memory Card 64GB", "Electronics", 549)]
+CAT_IDX = {}
+for i, (_, c, _) in enumerate(PRODUCTS):
+    CAT_IDX.setdefault(c, []).append(i)
 
+def write(name, header, rows):
+    with open(os.path.join(RAW, name), "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f); w.writerow(header); w.writerows(rows)
 
-def write_csv(name, header, rows):
-    path = os.path.join(RAW, name)
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        for row in rows:
-            writer.writerow(row)
+def poisson(lam):
+    L, k, p = math.exp(-lam), 0, 1.0
+    while True:
+        p *= rng.random()
+        if p <= L:
+            return k
+        k += 1
 
+def mangle_city(c):
+    r = rng.random()
+    return c.lower() if r < .20 else c.upper() if r < .32 else (" " + c + " ") if r < .42 else c
 
-# ---------- customers ----------
-customer_rows = []
-for idx in range(1, 1201):
-    cid = f"C{idx:04d}"
-    if idx <= 61:
-        age = ""
-    elif idx <= 67:
-        age = 9 if idx % 2 == 0 else 101
-    else:
-        age = rng.randint(18, 60)
-    if idx <= 30:
-        gender = ""
-    else:
-        gender = NONBLANK_GENDERS[(idx - 31) % len(NONBLANK_GENDERS)]
-    city = CITY_VARIANTS[(idx - 1) % len(CITY_VARIANTS)]
-    signup = (datetime(2024, 1, 1) + timedelta(days=rng.randint(0, 455))).strftime("%Y-%m-%d")
-    customer_rows.append([cid, city, signup, age, gender])
-write_csv("customers.csv", ["customer_id", "city", "signup_date", "age", "gender"], customer_rows)
+def mangle_gender(g):
+    opts = {"male": ["male", "Male", "M", "m", "MALE"], "female": ["female", "Female", "F", "f", "FEMALE"]}[g]
+    return rng.choice(opts)
 
+# ---------------- products ----------------
+write("products.csv", ["product_id", "product_name", "category", "price_inr"],
+      [[f"P{i+1:03d}", n, c, p] for i, (n, c, p) in enumerate(PRODUCTS)])
 
-# ---------- products ----------
-products = [[f"P{i+1:03d}", n, c, p] for i, (n, c, p) in enumerate(PRODUCTS)]
-write_csv("products.csv", ["product_id", "product_name", "category", "price_inr"], products)
+# ---------------- customers ----------------
+N_CUST = 1200
+IMPOSSIBLE_AGE = {10: 280, 110: -4, 210: 0, 310: 150, 410: 999, 510: 200}
+cust, arche = [], {}
+for i in range(N_CUST):
+    cid = f"C{i+1:04d}"
+    r = rng.random()
+    arche[cid] = "premium" if r < .20 else "frequent" if r < .60 else "rare"
+    signup = datetime(2024, 1, 1) + timedelta(days=rng.randint(0, 455))
+    age = IMPOSSIBLE_AGE.get(i, rng.randint(18, 60))
+    age = "" if (i not in IMPOSSIBLE_AGE and rng.random() < .05) else age
+    gender = "" if rng.random() < .03 else mangle_gender(rng.choice(["male", "female"]))
+    cust.append([cid, mangle_city(rng.choice(CITIES)), signup.strftime("%Y-%m-%d"), age, gender])
+write("customers.csv", ["customer_id", "city", "signup_date", "age", "gender"], cust)
 
-# ---------- orders (raw) ----------
-unique_orders = []
-for oid in range(1, 12310):
-    order_id = f"ORD-{oid:06d}"
-    customer_id = f"C{((oid - 1) % 1200) + 1:04d}"
-    product_id, _, _, price = products[(oid - 1) % len(products)]
-    qty = rng.randint(1, 5)
-    status = "completed" if oid <= 11110 else "cancelled"
-    ts = datetime(2025, 4, 1) + timedelta(days=rng.randint(0, 182), hours=rng.randint(7, 22), minutes=rng.randint(0, 59), seconds=rng.randint(0, 59))
-    disc = rng.choice([0, 0, 0, 5, 10, 15, 20, 25, 40])
-    amount = round(price * qty * (1 - disc / 100), 2)
-    if status == "completed":
-        delivery = rng.randint(8, 60)
-        if rng.random() < 0.06:
-            delivery = ""
-    else:
-        delivery = ""
-    unique_orders.append([order_id, customer_id, product_id, qty, ts.strftime("%Y-%m-%d %H:%M:%S"), status, disc, amount, delivery])
+# ---------------- orders ----------------
+WIN_START, WIN_DAYS = datetime(2025, 4, 1), 183          # 2025-04-01 .. 2025-09-30
+RATE = {"premium": 1.0, "frequent": 3.5, "rare": 0.5}   # expected orders per month
+def pick_product(a):
+    if a == "premium":
+        pool = CAT_IDX["Electronics"] if rng.random() < .7 else CAT_IDX["Personal Care"] + CAT_IDX["Snacks"]
+        return rng.choice(pool), rng.randint(1, 2)
+    if a == "frequent":
+        return rng.choice(CAT_IDX["Grocery"] + CAT_IDX["Dairy"] + CAT_IDX["Snacks"]), rng.randint(1, 3)
+    return rng.choice(CAT_IDX["Grocery"] + CAT_IDX["Dairy"] + CAT_IDX["Snacks"] + CAT_IDX["Personal Care"]), rng.randint(1, 2)
 
-raw_rows = [row[:] for row in unique_orders]
-# 656 pending rows: same order_id, earlier timestamp, blank delivery and amount blank.
-for i in range(656):
-    base = unique_orders[i % len(unique_orders)]
-    pending = base[:]
-    pending[4] = (datetime.strptime(base[4], "%Y-%m-%d %H:%M:%S") - timedelta(minutes=rng.randint(1, 15))).strftime("%Y-%m-%d %H:%M:%S")
-    pending[5] = "pending"
-    pending[7] = ""
-    pending[8] = ""
-    raw_rows.append(pending)
+rows, oid = [], 100000
+for cid, a in arche.items():
+    for _ in range(poisson(RATE[a] * 6.0)):
+        oid += 1
+        pi, qty = pick_product(a)
+        ts = WIN_START + timedelta(days=rng.randint(0, WIN_DAYS - 1), hours=rng.randint(7, 22),
+                                   minutes=rng.randint(0, 59), seconds=rng.randint(0, 59))
+        disc = rng.choice([0, 0, 0, 5, 10, 15, 20, 25, 40])
+        status = "cancelled" if rng.random() < .10 else "completed"
+        amount = round(PRODUCTS[pi][2] * qty * (1 - disc / 100), 2)
+        if status == "cancelled":
+            deliv = ""
+        else:
+            deliv = rng.randint(46, 75) if rng.random() < .10 else max(8, min(45, int(round(rng.gauss(24, 8)))))
+            if rng.random() < .06:
+                deliv = ""
+        rows.append({"order_id": f"ORD-{oid}", "customer_id": cid, "product_id": f"P{pi+1:03d}", "quantity": qty,
+                     "order_ts": ts, "status": status, "discount_pct": disc, "order_amount": amount,
+                     "delivery_minutes": deliv})
+out = []
+for k, r in enumerate(rows):
+    if k % 100 == 7 and r["status"] == "completed" and r["delivery_minutes"] != "":
+        r["delivery_minutes"] = -10                          # impossible negative duration (planted)
+    if r["status"] == "completed" and rng.random() < .01:
+        r["order_amount"] = "N/A" if rng.random() < .5 else "error"   # unparseable amount (planted)
+    base = [r["order_id"], r["customer_id"], r["product_id"], r["quantity"], r["order_ts"].strftime("%Y-%m-%d %H:%M:%S"),
+            r["status"], r["discount_pct"], r["order_amount"], r["delivery_minutes"]]
+    out.append(base)
+    if rng.random() < .05:   # earlier 'pending' record of the same order (partial duplicate)
+        early = list(base); early[4] = (r["order_ts"] - timedelta(minutes=rng.randint(1, 10))).strftime("%Y-%m-%d %H:%M:%S")
+        early[5] = "pending"; early[8] = ""
+        out.append(early)
+    if rng.random() < .01:   # exact duplicate
+        out.append(list(base))
+rng.shuffle(out)
+write("orders.csv", ["order_id", "customer_id", "product_id", "quantity", "order_ts", "status",
+                     "discount_pct", "order_amount", "delivery_minutes"], out)
 
-# Create the required row-level anomalies while keeping the final dataset in control.
-non_pending = [i for i in range(len(raw_rows)) if raw_rows[i][5] != "pending"]
-invalid_idx = set(rng.sample(non_pending, 120))
-neg_idx = set(rng.sample(sorted(set(non_pending) - invalid_idx), 106))
-blank_idx = set(rng.sample(sorted((set(non_pending) - invalid_idx) - neg_idx), 1885))
-for i in sorted(invalid_idx):
-    raw_rows[i][7] = rng.choice(["N/A", "error", "abc", "-", "3.1k"])
-for i in sorted(neg_idx):
-    raw_rows[i][8] = -rng.randint(5, 50)
-for i in sorted(blank_idx):
-    raw_rows[i][8] = ""
-
-# Exact duplicate rows must be appended after the mutation step so they remain exact copies of valid rows.
-valid_duplicate_candidates = [
-    i for i in range(len(raw_rows))
-    if raw_rows[i][5] != "pending"
-    and i not in invalid_idx
-    and i not in neg_idx
-    and i not in blank_idx
-]
-duplicate_pool = [raw_rows[i][:] for i in rng.sample(valid_duplicate_candidates, 119)]
-raw_rows.extend([row[:] for row in duplicate_pool])
-
-# Keep the raw output in the required shape; downstream cleaning validates the canonical counts.
-raw_df = __import__('pandas').DataFrame(raw_rows, columns=["order_id","customer_id","product_id","quantity","order_ts","status","discount_pct","order_amount","delivery_minutes"])
-
-write_csv("orders.csv", ["order_id", "customer_id", "product_id", "quantity", "order_ts", "status", "discount_pct", "order_amount", "delivery_minutes"], raw_rows)
-
-# ---------- tickets ----------
-T = {
-    "billing": [
-        "I was charged twice for order {o}. Please refund the extra payment. My email is {e}.",
-        "The invoice for {o} shows a wrong amount. Call me on {p} to correct the bill.",
-        "Extra money was deducted for order {o}, please check the bill. Contact {e}.",
-    ],
-    "delivery": [
-        "My order {o} has not arrived and the rider is not picking up calls. Please call {p}.",
-        "Delivery for {o} is very late, it was promised in 20 minutes. Write to {e}.",
-        "The rider marked {o} as delivered but I never received the package. Call {p}.",
-    ],
-    "technical": [
-        "The app crashes every time I open the cart. I tried to place {o} again and got an error. Email {e}.",
-        "I cannot login, the OTP never arrives on {p}.",
-        "The payment page shows an error and the app freezes when I apply a coupon. Order {o}.",
-    ],
-    "fraud": [
-        "There is an unauthorized transaction on my card linked to order {o}. I did not place it. Call {p}.",
-        "Someone hacked my account and used my wallet balance. This is fraud, contact {e}.",
-        "I was charged for order {o} that I never made, it looks like fraud on my account. Call {p}.",
-    ],
-}
+# ---------------- support tickets ----------------
+T = {"billing": ["I was charged twice for order {o}. Please refund the extra payment. My email is {e}.",
+                 "The invoice for {o} shows a wrong amount. Call me on {p} to correct the bill.",
+                 "Extra money was deducted for order {o}, please check the bill. Contact {e}."],
+     "delivery": ["My order {o} has not arrived and the rider is not picking up calls. Please call {p}.",
+                  "Delivery for {o} is very late, it was promised in 20 minutes. Write to {e}.",
+                  "The rider marked {o} as delivered but I never received the package. Call {p}."],
+     "technical": ["The app crashes every time I open the cart. I tried to place {o} again and got an error. Email {e}.",
+                   "I cannot login, the OTP never arrives on {p}.",
+                   "The payment page shows an error and the app freezes when I apply a coupon. Order {o}."],
+     "fraud": ["There is an unauthorized transaction on my card linked to order {o}. I did not place it. Call {p}.",
+               "Someone hacked my account and used my wallet balance. This is fraud, contact {e}.",
+               "I was charged for order {o} that I never made, it looks like fraud on my account. Call {p}."]}
 order_by_cust = {}
-for row in unique_orders:
-    order_by_cust.setdefault(row[1], row[0])
-customer_ids = sorted(order_by_cust)
+for r in out:
+    order_by_cust.setdefault(r[1], r[0])
+cust_with_orders = sorted(order_by_cust)
 tickets = []
+cats = list(T)
 for n in range(1, 157):
-    cat = ["billing", "delivery", "technical", "fraud"][(n - 1) % 4]
-    cid = rng.choice(customer_ids)
-    order_ref = order_by_cust[cid]
-    text = rng.choice(T[cat]).format(o=order_ref, e=f"user{n}@example.com", p=str(rng.choice("6789")) + "".join(rng.choice("0123456789") for _ in range(9)))
-    tickets.append([f"T{n:04d}", cid, order_ref, text, cat])
-for n in range(157, 161):
-    tickets.append([f"T{n:04d}", rng.choice(customer_ids), "", "", "none"])
-for n in range(161, 165):
-    billboard = "My delivery was late. " + ("The same problem keeps happening and nobody has given me a clear answer yet. " * 40).strip()
-    tickets.append([f"T{n:04d}", rng.choice(customer_ids), "", billboard, "delivery"])
+    cat = cats[(n - 1) % 4]
+    cid = rng.choice(cust_with_orders)
+    txt = rng.choice(T[cat]).format(o=order_by_cust[cid], e=f"user{n}@example.com", p=str(rng.choice("6789")) + "".join(rng.choice("0123456789") for _ in range(9)))
+    tickets.append([f"T{n:04d}", cid, order_by_cust[cid], txt, cat])
+FILL = "The same problem keeps happening and nobody has given me a clear answer yet. "
+for n in range(157, 161):                         # 4 empty tickets
+    tickets.append([f"T{n:04d}", rng.choice(cust_with_orders), "", "", "none"])
+for n in range(161, 165):                         # 4 very long tickets (~520 words)
+    tickets.append([f"T{n:04d}", rng.choice(cust_with_orders), "", ("My delivery was late. " + FILL * 40).strip(), "delivery"])
 rng.shuffle(tickets)
-write_csv("tickets.csv", ["ticket_id", "customer_id", "order_id", "text", "true_category"], tickets)
+write("tickets.csv", ["ticket_id", "customer_id", "order_id", "text", "true_category"], tickets)
 
-# ---------- policy docs ----------
+# ---------------- policy documents ----------------
 DOCS = {
-    "refund_policy.txt": "Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.",
-    "delivery_policy.txt": "Delivery Policy. Standard delivery is promised within 30 minutes of order confirmation in all supported cities. The supported cities are Chennai, Mumbai, Bengaluru, Delhi, Hyderabad and Pune. A delivery fee of INR 25 is charged on orders below INR 199, and delivery is free on orders of INR 199 or more. During heavy rain the promised time may extend to 60 minutes and the app shows a rain notice. A rider will attempt to contact the customer twice before marking an order as undeliverable. Electronics items are delivered only after the customer shares a one time password with the rider.",
-    "payment_policy.txt": "Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.",
-    "privacy_policy.txt": "Privacy Policy. Customer phone numbers and email addresses are used only for order updates and support. Support tickets are processed with personal details masked before any automated tool reads them. Delivery addresses are deleted from active systems 180 days after the last order. A customer can ask for account deletion and the request is completed within 30 days. Payment card numbers are never stored by the support system.",
-    "escalation_policy.txt": "Escalation Policy. A ticket about fraud or an unauthorized transaction is marked high priority and sent to the security team within 2 hours. Tickets from premium customers are answered within 1 hour, and all other tickets within 24 hours. If an automated assistant cannot resolve a ticket within 6 steps, it must hand the case to a human agent with a short summary. A human agent must call the customer back if such a high-value request is rejected.",
-}
+"refund_policy.txt": """Refund Policy. A refund can be requested only for orders whose status is completed. Orders with status cancelled were never charged, so no refund applies to them. If a completed order is delivered in more than 45 minutes, the customer receives a full refund of the order amount. If a completed order is delivered in 45 minutes or less, no late-delivery refund is paid. Refunds up to INR 1000 are approved automatically by the support system. A refund above INR 1000 must be approved by a human support lead before money is returned. Approved refunds are credited to the original payment method within 5 working days. A refund request must be raised within 7 days of the delivery date.""",
+"delivery_policy.txt": """Delivery Policy. Standard delivery is promised within 30 minutes of order confirmation in all supported cities. The supported cities are Chennai, Mumbai, Bengaluru, Delhi, Hyderabad and Pune. A delivery fee of INR 25 is charged on orders below INR 199, and delivery is free on orders of INR 199 or more. During heavy rain the promised time may extend to 60 minutes and the app shows a rain notice. A rider will attempt to contact the customer twice before marking an order as undeliverable. Electronics items are delivered only after the customer shares a one time password with the rider.""",
+"payment_policy.txt": """Payment Policy. Customers can pay using UPI, debit card, credit card or cash on delivery. Cash on delivery is available only for orders up to INR 2500. If a payment fails but money is deducted, the amount is returned automatically within 48 hours. A customer who sees two charges for one order should raise a billing ticket with the order identifier. Wallet balance can be used for any order and is never refunded as cash. Coupons cannot be combined with wallet balance on the same order.""",
+"privacy_policy.txt": """Privacy Policy. Customer phone numbers and email addresses are used only for order updates and support. Support tickets are processed with personal details masked before any automated tool reads them. Delivery addresses are deleted from active systems 180 days after the last order. A customer can ask for account deletion and the request is completed within 30 days. Payment card numbers are never stored by the support system.""",
+"escalation_policy.txt": """Escalation Policy. A ticket about fraud or an unauthorized transaction is marked high priority and sent to the security team within 2 hours. Tickets from premium customers are answered within 1 hour, and all other tickets within 24 hours. If an automated assistant cannot resolve a ticket within 6 steps, it must hand the case to a human agent with a short summary. A human agent must call the customer back if such a high-value request is rejected."""}
 for fn, body in DOCS.items():
     with open(os.path.join(POL, fn), "w", encoding="utf-8") as f:
         f.write(body + "\n")
 
-QA = [
-    ("What delivery time makes a completed order eligible for a full refund?", "refund_policy.txt", "more than 45 minutes"),
-    ("Who must approve a refund above INR 1000?", "refund_policy.txt", "human support lead"),
-    ("How many days do I have to raise a refund request?", "refund_policy.txt", "within 7 days"),
-    ("What is the delivery fee on small orders?", "delivery_policy.txt", "INR 25"),
-    ("On orders of what value is delivery free?", "delivery_policy.txt", "INR 199 or more"),
-    ("Why does the electronics delivery need a one time password?", "delivery_policy.txt", "one time password"),
-    ("Is cash on delivery available for a large order?", "payment_policy.txt", "INR 2500"),
-    ("How soon is money returned when a payment fails but is deducted?", "payment_policy.txt", "48 hours"),
-    ("Can wallet balance be refunded as cash?", "payment_policy.txt", "never refunded as cash"),
-    ("When are delivery addresses deleted from active systems?", "privacy_policy.txt", "180 days"),
-    ("How fast must a fraud ticket reach the security team?", "escalation_policy.txt", "within 2 hours"),
-    ("After how many steps must an automated assistant hand over to a human?", "escalation_policy.txt", "6 steps"),
-    ("What is the favourite colour of the company mascot?", "NONE", ""),
-    ("Who won the cricket world cup final?", "NONE", ""),
-]
+# ---------------- policy evaluation questions ----------------
+QA = [("What delivery time makes a completed order eligible for a full refund?", "refund_policy.txt", "more than 45 minutes"),
+      ("Who must approve a refund above INR 1000?", "refund_policy.txt", "human support lead"),
+      ("How many days do I have to raise a refund request?", "refund_policy.txt", "within 7 days"),
+      ("What is the delivery fee on small orders?", "delivery_policy.txt", "INR 25"),
+      ("On orders of what value is delivery free?", "delivery_policy.txt", "INR 199 or more"),
+      ("Why does the electronics delivery need a one time password?", "delivery_policy.txt", "one time password"),
+      ("Is cash on delivery available for a large order?", "payment_policy.txt", "INR 2500"),
+      ("How soon is money returned when a payment fails but is deducted?", "payment_policy.txt", "48 hours"),
+      ("Can wallet balance be refunded as cash?", "payment_policy.txt", "never refunded as cash"),
+      ("When are delivery addresses deleted from active systems?", "privacy_policy.txt", "180 days"),
+      ("How fast must a fraud ticket reach the security team?", "escalation_policy.txt", "within 2 hours"),
+      ("After how many steps must an automated assistant hand over to a human?", "escalation_policy.txt", "6 steps"),
+      ("What is the favourite colour of the company mascot?", "NONE", ""),
+      ("Who won the cricket world cup final?", "NONE", "")]
 with open(os.path.join(RAW, "policy_eval.csv"), "w", newline="", encoding="utf-8") as f:
-    writer = csv.writer(f)
-    writer.writerow(["question", "expected_doc", "expected_fact"])
-    writer.writerows(QA)
+    w = csv.writer(f); w.writerow(["question", "expected_doc", "expected_fact"]); w.writerows(QA)
 
-# ---------- agent scenarios ----------
-# Keep the same scenario pattern described in the prompt.
-count_by_order = Counter(row[0] for row in unique_orders)
-
-def clean_row(r):
+# ---------------- agent scenarios (simulated refund requests) ----------------
+from collections import Counter
+cnt = Counter(r[0] for r in out)
+def clean_row(r):                                    # single-record, fully valid order
     try:
-        return count_by_order[r[0]] == 1 and r[5] in ("completed", "cancelled") and float(r[7]) > 0 and (r[5] == "cancelled" or (r[8] != "" and 8 <= int(r[8]) <= 75))
-    except Exception:
+        return cnt[r[0]] == 1 and r[5] in ("completed", "cancelled") and float(r[7]) > 0 and \
+            (r[5] == "cancelled" or (r[8] != "" and 8 <= int(r[8]) <= 75))
+    except ValueError:
         return False
-
-valid_rows = sorted((r for r in unique_orders if clean_row(r)), key=lambda r: r[0])
-
+ok_rows = sorted((r for r in out if clean_row(r)), key=lambda r: r[0])
 def first(pred):
-    for r in valid_rows:
-        if pred(r):
-            return r
-    return None
-
-late_small = [r for r in valid_rows if r[5] == "completed" and int(r[8]) > 45 and float(r[7]) <= 1000][:2]
+    return next(r for r in ok_rows if pred(r))
+late_small = [r for r in ok_rows if r[5] == "completed" and int(r[8]) > 45 and float(r[7]) <= 1000][:2]
 late_big = first(lambda r: r[5] == "completed" and int(r[8]) > 45 and float(r[7]) > 1000)
 on_time = first(lambda r: r[5] == "completed" and int(r[8]) <= 45)
 cancelled = first(lambda r: r[5] == "cancelled")
@@ -234,9 +205,7 @@ SC.append((cancelled[1], f"I want my money back for order {cancelled[0]}.", "DEN
 SC.append(("C0001", "Refund for order ORD-999999 please.", "NOT_FOUND", 0))
 SC.append((late_small[0][1], f"[LOOP] Refund order {late_small[0][0]}.", "FALLBACK", 0))
 with open(os.path.join(RAW, "agent_scenarios.csv"), "w", newline="", encoding="utf-8") as f:
-    writer = csv.writer(f)
-    writer.writerow(["scenario_id", "customer_id", "message", "expected_outcome", "expected_refund_inr"])
-    for i, (cid, msg, outcome, amount) in enumerate(SC, 1):
-        writer.writerow([f"S{i}", cid, msg, outcome, f"{amount:.2f}"])
-
-print("generated: customers=%d products=%d orders_raw=%d tickets=%d" % (len(customer_rows), len(PRODUCTS), len(raw_rows), len(tickets)))
+    w = csv.writer(f); w.writerow(["scenario_id", "customer_id", "message", "expected_outcome", "expected_refund_inr"])
+    for i, (cid, msg, oc, amt) in enumerate(SC, 1):
+        w.writerow([f"S{i}", cid, msg, oc, f"{amt:.2f}"])
+print("generated: customers=%d products=%d orders_raw=%d tickets=%d" % (len(cust), len(PRODUCTS), len(out), len(tickets)))

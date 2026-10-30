@@ -1,7 +1,4 @@
-{"scenario_id": "S1", "status": "denied", "refund_inr": 0}
-{"scenario_id": "S2", "status": "denied", "refund_inr": 0}
-{"scenario_id": "S3", "status": "denied", "refund_inr": 0}
-{"scenario_id": "S4", "status": "denied", "refund_inr": 0}
-{"scenario_id": "S5", "status": "denied", "refund_inr": 0}
-{"scenario_id": "S6", "status": "denied", "refund_inr": 0}
-{"scenario_id": "S7", "status": "denied", "refund_inr": 0}
+{"timestamp": "2026-10-30T06:31:52.979894+00:00", "tool_name": "issue_refund", "scenario_id": "S1", "order_id": "ORD-100048", "refund_inr": 128.25}
+{"timestamp": "2026-10-30T06:31:53.013541+00:00", "tool_name": "issue_refund", "scenario_id": "S2", "order_id": "ORD-100067", "refund_inr": 135.0}
+{"timestamp": "2026-10-30T06:31:53.042090+00:00", "tool_name": "escalate_to_human", "scenario_id": "S3", "order_id": "ORD-100145", "refund_inr": 1999.0}
+{"timestamp": "2026-10-30T06:31:53.206898+00:00", "tool_name": "issue_refund", "scenario_id": "S1", "order_id": "ORD-100048", "refund_inr": 128.25}
