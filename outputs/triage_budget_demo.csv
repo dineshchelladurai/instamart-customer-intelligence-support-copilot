@@ -1,0 +1,4 @@
+budget,tickets_per_day,avg_resolution_minutes,accuracy
+1000,500,17,0.81
+2500,1200,11,0.89
+5000,2500,8,0.93

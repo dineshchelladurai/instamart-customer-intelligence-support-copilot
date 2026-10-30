@@ -1,0 +1,7 @@
+{"scenario_id": "S1", "customer_id": "C0018", "expected_outcome": "REFUND", "actual_outcome": "", "status": "check"}
+{"scenario_id": "S2", "customer_id": "C0024", "expected_outcome": "REFUND", "actual_outcome": "", "status": "check"}
+{"scenario_id": "S3", "customer_id": "C0032", "expected_outcome": "ESCALATE", "actual_outcome": "", "status": "check"}
+{"scenario_id": "S4", "customer_id": "C0001", "expected_outcome": "DENIED", "actual_outcome": "", "status": "check"}
+{"scenario_id": "S5", "customer_id": "C0311", "expected_outcome": "DENIED", "actual_outcome": "", "status": "check"}
+{"scenario_id": "S6", "customer_id": "C0001", "expected_outcome": "NOT_FOUND", "actual_outcome": "", "status": "check"}
+{"scenario_id": "S7", "customer_id": "C0018", "expected_outcome": "FALLBACK", "actual_outcome": "", "status": "ok"}
